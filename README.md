@@ -4,10 +4,10 @@ lmdeck recipe for [`javierbits/Hy4-flash-NVFP4`](https://huggingface.co/javierbi
 
 ```sh
 lmdeck add https://github.com/javierbits/Hy4-flash-NVFP4-DGX-Spark-recipe
-lmdeck use hy4-flash-nvfp4-dgx-spark-recipe --dry-run
+lmdeck use hy4-flash-nvfp4-dgx-spark-recipe
 ```
 
-`lmdeck add` names the deck entry from the repo and injects `[source]`. The manifest leaves `[source]` out on purpose. On any machine, lmdeck looks up `javierbits/Hy4-flash-NVFP4` in the Hugging Face hub cache (`$HF_HUB_CACHE`, else `$HF_HOME/hub`, else `~/.cache/huggingface/hub`).
+`lmdeck add` names the deck entry from the repo and injects `[source]`. The manifest leaves `[source]` out on purpose. `lmdeck use` starts `vllm/vllm-openai:hy4-flash` across four machines, tensor parallel 4, and serves `hy4-flash` on port 8891. The weights are `javierbits/Hy4-flash-NVFP4` in the Hugging Face hub cache (`$HF_HUB_CACHE`, else `$HF_HOME/hub`, else `~/.cache/huggingface/hub`). lmdeck mounts that cache from the machine that already has the snapshot.
 
 ## Quant
 
@@ -37,4 +37,4 @@ python3 -m unittest tests/test_check_checkpoint.py -v
 python3 scripts/check_checkpoint.py --find
 ```
 
-The checkpoint test runs when `javierbits/Hy4-flash-NVFP4` is in the local Hugging Face cache. Other machines skip it.
+The checkpoint test runs when `javierbits/Hy4-flash-NVFP4` is in the local Hugging Face cache. Other machines skip it. `lmdeck use --dry-run` prints the four-node plan without starting vLLM.

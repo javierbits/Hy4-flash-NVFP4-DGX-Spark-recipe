@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
@@ -162,30 +161,20 @@ class CheckCheckpointTest(unittest.TestCase):
         self.assertTrue(report.ok, report.errors)
 
 
-class ServeGuardTest(unittest.TestCase):
-    """The serve script must refuse, and stop must be a no-op success."""
+class ServeCommandTest(unittest.TestCase):
+    """The recipe launches vLLM on four nodes."""
 
-    def test_serve_script_does_not_launch_vllm(self) -> None:
-        """scripts/serve.sh exits 2 and never calls vllm or docker."""
+    def test_toml_starts_vllm_on_four_nodes(self) -> None:
+        """lmdeck.toml runs vllm serve once per rank and names the hub repo."""
 
-        text = (ROOT / "scripts" / "serve.sh").read_text(encoding="utf-8")
-        self.assertIn("exit 2", text)
-        self.assertNotIn("vllm serve", text)
-        self.assertNotIn("docker run", text)
-        mode = (ROOT / "scripts" / "serve.sh").stat().st_mode
-        self.assertTrue(mode & stat.S_IXUSR)
-
-    def test_stop_script_exits_zero(self) -> None:
-        """scripts/stop.sh succeeds and reports that no server was started."""
-
-        result = subprocess.run(
-            ["bash", str(ROOT / "scripts" / "stop.sh")],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("stopped", result.stdout)
+        text = (ROOT / "lmdeck.toml").read_text(encoding="utf-8")
+        self.assertEqual(text.count("exec vllm serve javierbits/Hy4-flash-NVFP4"), 4)
+        self.assertEqual(text.count('"docker", "run"'), 4)
+        for rank in range(4):
+            self.assertIn(f"--node-rank {rank}", text)
+        self.assertIn('host = "local"', text)
+        self.assertNotIn("exit 2", text)
+        self.assertNotIn("/home/", text)
 
     def test_find_cli_prints_the_hub_snapshot(self) -> None:
         """--find prints the snapshot directory from HF_HUB_CACHE."""

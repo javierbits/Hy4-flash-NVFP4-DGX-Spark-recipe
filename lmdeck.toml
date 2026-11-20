@@ -1,12 +1,13 @@
-# Hy4-flash NVFP4 W4A16. lmdeck add of this repo injects [source] and ignores
-# name, so this file leaves [source] out and uses engine.name = "custom".
-# Weights are the Hugging Face repo below. lmdeck resolves them from the
-# hub cache on whatever machine holds the snapshot.
+# Hy4-flash NVFP4 on four DGX Sparks. lmdeck add injects [source], so this
+# file leaves [source] out and uses engine.name = "custom".
+# Weights are javierbits/Hy4-flash-NVFP4 in the Hugging Face cache. The head
+# is local: run lmdeck on any machine and it NFS-mounts the cache from the
+# host that already has the snapshot. Workers are placed on that host's fabric.
 schema = 1
 name = "hy4-flash-nvfp4-dgx-spark-recipe"
-display_name = "Hy4-flash NVFP4 W4A16 (4x Spark)"
-description = "NVFP4 W4A16 of tencent/Hy4-flash routed experts. Attention, shared experts, layer 0, vision, DFly2, and Engram stay BF16."
-tags = ["hy4", "nvfp4", "w4a16", "dgx-spark", "compressed-tensors"]
+display_name = "Hy4-flash NVFP4 W4A16 (vLLM, 4x Spark)"
+description = "NVFP4 W4A16 of tencent/Hy4-flash routed experts on four DGX Sparks, vLLM hy4-flash image, tensor parallel 4."
+tags = ["hy4", "nvfp4", "w4a16", "vllm", "dgx-spark", "multi-node", "4x-spark"]
 
 [model]
 repo = "javierbits/Hy4-flash-NVFP4"
@@ -19,20 +20,171 @@ bits = 4.0
 
 [engine]
 name = "custom"
-command = ["bash", "scripts/serve.sh"]
-stop = ["bash", "scripts/stop.sh"]
+image = "vllm/vllm-openai:hy4-flash"
 port = 8891
-ready_timeout = 30
-
-[engine.env]
-MODEL_PATH = "{model}"
-PORT = "{port}"
-HOST = "{host}"
+ctx = 8192
+ready_timeout = 7200
 
 [hardware]
-hosts = 4
+nodes = 4
 min_memory_gb = 96
 os = ["linux"]
 arch = ["aarch64"]
 accelerator = ["nvidia"]
 min_compute_capability = "10.0"
+
+[cluster]
+order = "workers-first"
+gate_timeout = 7200
+
+[[nodes]]
+name = "head"
+role = "head"
+host = "local"
+port = 8891
+ready_port = 8891
+container = "lmdeck-hy4-nvfp4-head"
+stop = ["docker", "rm", "-f", "lmdeck-hy4-nvfp4-head"]
+logs = ["docker", "logs", "-f", "lmdeck-hy4-nvfp4-head"]
+detached = true
+env = { HF_HOME = "{weights_at}", HF_HUB_OFFLINE = "1", VLLM_ENGINE_READY_TIMEOUT_S = "3600", NCCL_IB_DISABLE = "0", NCCL_SOCKET_IFNAME = "{ifname}", GLOO_SOCKET_IFNAME = "{ifname}", NCCL_IB_HCA = "{hca}", NCCL_IB_GID_INDEX = "{gid_index}", VLLM_HOST_IP = "{node_addr}", PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:False" }
+command = [
+  "docker", "run", "-d", "--rm", "--name", "lmdeck-hy4-nvfp4-head",
+  "--gpus", "all", "--network", "host", "--ipc", "host", "--shm-size", "16g",
+  "--ulimit", "memlock=-1", "--ulimit", "stack=67108864",
+  "--device", "/dev/infiniband:/dev/infiniband",
+  "-v", "{weights_mount}",
+  "-v", "lmdeck-vllm-cache-{node}:/root/.cache/vllm",
+  "-e", "HF_HOME", "-e", "HF_HUB_OFFLINE", "-e", "VLLM_ENGINE_READY_TIMEOUT_S",
+  "-e", "NCCL_IB_DISABLE", "-e", "NCCL_SOCKET_IFNAME", "-e", "GLOO_SOCKET_IFNAME",
+  "-e", "NCCL_IB_HCA", "-e", "NCCL_IB_GID_INDEX", "-e", "VLLM_HOST_IP",
+  "--entrypoint", "bash", "{image}", "-lc",
+  '''exec vllm serve javierbits/Hy4-flash-NVFP4 \
+  --served-model-name hy4-flash \
+  --host 0.0.0.0 --port 8891 \
+  --tensor-parallel-size 4 --nnodes 4 --node-rank 0 \
+  --master-addr {master_addr} --master-port 29651 \
+  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
+  --attention-backend FLASHMLA_SPARSE \
+  --max-model-len 8192 \
+  --max-num-seqs 1 \
+  --max-num-batched-tokens 1024 \
+  --gpu-memory-utilization 0.72 \
+  --enforce-eager \
+  --reasoning-parser hy_v4 \
+  --enable-auto-tool-choice --tool-call-parser hy_v4''',
+]
+
+[[nodes]]
+name = "w1"
+role = "worker"
+host = "auto"
+ready_delay = 10
+container = "lmdeck-hy4-nvfp4-w1"
+stop = ["docker", "rm", "-f", "lmdeck-hy4-nvfp4-w1"]
+logs = ["docker", "logs", "-f", "lmdeck-hy4-nvfp4-w1"]
+detached = true
+env = { HF_HOME = "{weights_at}", HF_HUB_OFFLINE = "1", VLLM_ENGINE_READY_TIMEOUT_S = "3600", NCCL_IB_DISABLE = "0", NCCL_SOCKET_IFNAME = "{ifname}", GLOO_SOCKET_IFNAME = "{ifname}", NCCL_IB_HCA = "{hca}", NCCL_IB_GID_INDEX = "{gid_index}", VLLM_HOST_IP = "{node_addr}", PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:False" }
+command = [
+  "docker", "run", "-d", "--rm", "--name", "lmdeck-hy4-nvfp4-w1",
+  "--gpus", "all", "--network", "host", "--ipc", "host", "--shm-size", "16g",
+  "--ulimit", "memlock=-1", "--ulimit", "stack=67108864",
+  "--device", "/dev/infiniband:/dev/infiniband",
+  "-v", "{weights_mount}",
+  "-v", "lmdeck-vllm-cache-{node}:/root/.cache/vllm",
+  "-e", "HF_HOME", "-e", "HF_HUB_OFFLINE", "-e", "VLLM_ENGINE_READY_TIMEOUT_S",
+  "-e", "NCCL_IB_DISABLE", "-e", "NCCL_SOCKET_IFNAME", "-e", "GLOO_SOCKET_IFNAME",
+  "-e", "NCCL_IB_HCA", "-e", "NCCL_IB_GID_INDEX", "-e", "VLLM_HOST_IP",
+  "--entrypoint", "bash", "{image}", "-lc",
+  '''exec vllm serve javierbits/Hy4-flash-NVFP4 \
+  --served-model-name hy4-flash \
+  --host 0.0.0.0 --port 8891 \
+  --tensor-parallel-size 4 --nnodes 4 --node-rank 1 \
+  --master-addr {master_addr} --master-port 29651 \
+  --headless \
+  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
+  --attention-backend FLASHMLA_SPARSE \
+  --max-model-len 8192 \
+  --max-num-seqs 1 \
+  --max-num-batched-tokens 1024 \
+  --gpu-memory-utilization 0.72 \
+  --enforce-eager \
+  --reasoning-parser hy_v4 \
+  --enable-auto-tool-choice --tool-call-parser hy_v4''',
+]
+
+[[nodes]]
+name = "w2"
+role = "worker"
+host = "auto"
+ready_delay = 10
+container = "lmdeck-hy4-nvfp4-w2"
+stop = ["docker", "rm", "-f", "lmdeck-hy4-nvfp4-w2"]
+logs = ["docker", "logs", "-f", "lmdeck-hy4-nvfp4-w2"]
+detached = true
+env = { HF_HOME = "{weights_at}", HF_HUB_OFFLINE = "1", VLLM_ENGINE_READY_TIMEOUT_S = "3600", NCCL_IB_DISABLE = "0", NCCL_SOCKET_IFNAME = "{ifname}", GLOO_SOCKET_IFNAME = "{ifname}", NCCL_IB_HCA = "{hca}", NCCL_IB_GID_INDEX = "{gid_index}", VLLM_HOST_IP = "{node_addr}", PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:False" }
+command = [
+  "docker", "run", "-d", "--rm", "--name", "lmdeck-hy4-nvfp4-w2",
+  "--gpus", "all", "--network", "host", "--ipc", "host", "--shm-size", "16g",
+  "--ulimit", "memlock=-1", "--ulimit", "stack=67108864",
+  "--device", "/dev/infiniband:/dev/infiniband",
+  "-v", "{weights_mount}",
+  "-v", "lmdeck-vllm-cache-{node}:/root/.cache/vllm",
+  "-e", "HF_HOME", "-e", "HF_HUB_OFFLINE", "-e", "VLLM_ENGINE_READY_TIMEOUT_S",
+  "-e", "NCCL_IB_DISABLE", "-e", "NCCL_SOCKET_IFNAME", "-e", "GLOO_SOCKET_IFNAME",
+  "-e", "NCCL_IB_HCA", "-e", "NCCL_IB_GID_INDEX", "-e", "VLLM_HOST_IP",
+  "--entrypoint", "bash", "{image}", "-lc",
+  '''exec vllm serve javierbits/Hy4-flash-NVFP4 \
+  --served-model-name hy4-flash \
+  --host 0.0.0.0 --port 8891 \
+  --tensor-parallel-size 4 --nnodes 4 --node-rank 2 \
+  --master-addr {master_addr} --master-port 29651 \
+  --headless \
+  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
+  --attention-backend FLASHMLA_SPARSE \
+  --max-model-len 8192 \
+  --max-num-seqs 1 \
+  --max-num-batched-tokens 1024 \
+  --gpu-memory-utilization 0.72 \
+  --enforce-eager \
+  --reasoning-parser hy_v4 \
+  --enable-auto-tool-choice --tool-call-parser hy_v4''',
+]
+
+[[nodes]]
+name = "w3"
+role = "worker"
+host = "auto"
+ready_delay = 10
+container = "lmdeck-hy4-nvfp4-w3"
+stop = ["docker", "rm", "-f", "lmdeck-hy4-nvfp4-w3"]
+logs = ["docker", "logs", "-f", "lmdeck-hy4-nvfp4-w3"]
+detached = true
+env = { HF_HOME = "{weights_at}", HF_HUB_OFFLINE = "1", VLLM_ENGINE_READY_TIMEOUT_S = "3600", NCCL_IB_DISABLE = "0", NCCL_SOCKET_IFNAME = "{ifname}", GLOO_SOCKET_IFNAME = "{ifname}", NCCL_IB_HCA = "{hca}", NCCL_IB_GID_INDEX = "{gid_index}", VLLM_HOST_IP = "{node_addr}", PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:False" }
+command = [
+  "docker", "run", "-d", "--rm", "--name", "lmdeck-hy4-nvfp4-w3",
+  "--gpus", "all", "--network", "host", "--ipc", "host", "--shm-size", "16g",
+  "--ulimit", "memlock=-1", "--ulimit", "stack=67108864",
+  "--device", "/dev/infiniband:/dev/infiniband",
+  "-v", "{weights_mount}",
+  "-v", "lmdeck-vllm-cache-{node}:/root/.cache/vllm",
+  "-e", "HF_HOME", "-e", "HF_HUB_OFFLINE", "-e", "VLLM_ENGINE_READY_TIMEOUT_S",
+  "-e", "NCCL_IB_DISABLE", "-e", "NCCL_SOCKET_IFNAME", "-e", "GLOO_SOCKET_IFNAME",
+  "-e", "NCCL_IB_HCA", "-e", "NCCL_IB_GID_INDEX", "-e", "VLLM_HOST_IP",
+  "--entrypoint", "bash", "{image}", "-lc",
+  '''exec vllm serve javierbits/Hy4-flash-NVFP4 \
+  --served-model-name hy4-flash \
+  --host 0.0.0.0 --port 8891 \
+  --tensor-parallel-size 4 --nnodes 4 --node-rank 3 \
+  --master-addr {master_addr} --master-port 29651 \
+  --headless \
+  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
+  --attention-backend FLASHMLA_SPARSE \
+  --max-model-len 8192 \
+  --max-num-seqs 1 \
+  --max-num-batched-tokens 1024 \
+  --gpu-memory-utilization 0.72 \
+  --enforce-eager \
+  --reasoning-parser hy_v4 \
+  --enable-auto-tool-choice --tool-call-parser hy_v4''',
+]
