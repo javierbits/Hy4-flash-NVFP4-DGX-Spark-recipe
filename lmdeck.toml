@@ -64,7 +64,6 @@ command = [
   --host 0.0.0.0 --port 8891 \
   --tensor-parallel-size 4 --nnodes 4 --node-rank 0 \
   --master-addr {master_addr} --master-port 29651 \
-  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
   --attention-backend FLASHMLA_SPARSE \
   --max-model-len 8192 \
   --max-num-seqs 1 \
@@ -102,7 +101,6 @@ command = [
   --tensor-parallel-size 4 --nnodes 4 --node-rank 1 \
   --master-addr {master_addr} --master-port 29651 \
   --headless \
-  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
   --attention-backend FLASHMLA_SPARSE \
   --max-model-len 8192 \
   --max-num-seqs 1 \
@@ -140,7 +138,6 @@ command = [
   --tensor-parallel-size 4 --nnodes 4 --node-rank 2 \
   --master-addr {master_addr} --master-port 29651 \
   --headless \
-  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
   --attention-backend FLASHMLA_SPARSE \
   --max-model-len 8192 \
   --max-num-seqs 1 \
@@ -178,7 +175,6 @@ command = [
   --tensor-parallel-size 4 --nnodes 4 --node-rank 3 \
   --master-addr {master_addr} --master-port 29651 \
   --headless \
-  --speculative-config '{"num_speculative_tokens":5,"method":"dfly"}' \
   --attention-backend FLASHMLA_SPARSE \
   --max-model-len 8192 \
   --max-num-seqs 1 \

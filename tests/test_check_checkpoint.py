@@ -175,6 +175,10 @@ class ServeCommandTest(unittest.TestCase):
         self.assertIn('host = "local"', text)
         self.assertNotIn("exit 2", text)
         self.assertNotIn("/home/", text)
+        # This vLLM build rejects DFly unless the checkpoint is FP8 W8A8.
+        # The NVFP4 W4A16 weights fail that check before the server binds.
+        self.assertNotIn("speculative-config", text)
+        self.assertNotIn("dfly", text)
 
     def test_find_cli_prints_the_hub_snapshot(self) -> None:
         """--find prints the snapshot directory from HF_HUB_CACHE."""

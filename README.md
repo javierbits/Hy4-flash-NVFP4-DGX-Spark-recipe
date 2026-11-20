@@ -7,7 +7,7 @@ lmdeck add https://github.com/javierbits/Hy4-flash-NVFP4-DGX-Spark-recipe
 lmdeck use hy4-flash-nvfp4-dgx-spark-recipe
 ```
 
-`lmdeck add` names the deck entry from the repo and injects `[source]`. The manifest leaves `[source]` out on purpose. `lmdeck use` starts `vllm/vllm-openai:hy4-flash` across four machines, tensor parallel 4, and serves `hy4-flash` on port 8891. The weights are `javierbits/Hy4-flash-NVFP4` in the Hugging Face hub cache (`$HF_HUB_CACHE`, else `$HF_HOME/hub`, else `~/.cache/huggingface/hub`). lmdeck mounts that cache from the machine that already has the snapshot.
+`lmdeck add` names the deck entry from the repo and injects `[source]`. The manifest leaves `[source]` out on purpose. `lmdeck use` starts `vllm/vllm-openai:hy4-flash` across four machines, tensor parallel 4, and serves `hy4-flash` on port 8891. DFly speculative decoding is left off: this vLLM image accepts it only for FP8 W8A8 checkpoints, and these weights are NVFP4 W4A16. The weights are `javierbits/Hy4-flash-NVFP4` in the Hugging Face hub cache (`$HF_HUB_CACHE`, else `$HF_HOME/hub`, else `~/.cache/huggingface/hub`). lmdeck mounts that cache from the machine that already has the snapshot.
 
 ## Quant
 
