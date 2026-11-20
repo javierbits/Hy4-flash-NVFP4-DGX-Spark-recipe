@@ -1,0 +1,38 @@
+# Hy4-flash NVFP4 W4A16. lmdeck add of this repo injects [source] and ignores
+# name, so this file leaves [source] out and uses engine.name = "custom".
+# Weights are the Hugging Face repo below. lmdeck resolves them from the
+# hub cache on whatever machine holds the snapshot.
+schema = 1
+name = "hy4-flash-nvfp4-dgx-spark-recipe"
+display_name = "Hy4-flash NVFP4 W4A16 (4x Spark)"
+description = "NVFP4 W4A16 of tencent/Hy4-flash routed experts. Attention, shared experts, layer 0, vision, DFly2, and Engram stay BF16."
+tags = ["hy4", "nvfp4", "w4a16", "dgx-spark", "compressed-tensors"]
+
+[model]
+repo = "javierbits/Hy4-flash-NVFP4"
+size_gb = 211.35
+
+[quant]
+format = "nvfp4"
+label = "NVFP4 W4A16 routed experts; attention, shared experts, layer 0, vision, DFly2, and Engram stay BF16"
+bits = 4.0
+
+[engine]
+name = "custom"
+command = ["bash", "scripts/serve.sh"]
+stop = ["bash", "scripts/stop.sh"]
+port = 8891
+ready_timeout = 30
+
+[engine.env]
+MODEL_PATH = "{model}"
+PORT = "{port}"
+HOST = "{host}"
+
+[hardware]
+hosts = 4
+min_memory_gb = 96
+os = ["linux"]
+arch = ["aarch64"]
+accelerator = ["nvidia"]
+min_compute_capability = "10.0"
